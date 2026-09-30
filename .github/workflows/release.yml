@@ -1,0 +1,43 @@
+# Lives in Ahmedabied/tamlik-care-builds; copied there by the Phase 1 APK
+# workflow in tamlik-care-prototype on every build (do not edit it there).
+#
+# The APK arrives in chunks under 100 MB only because git can't carry larger
+# files; this joins them back into the one universal APK and publishes it as
+# the asset of a new "latest" Release:
+#   https://github.com/Ahmedabied/tamlik-care-builds/releases/latest/download/tamlik-care-phase1.apk
+name: Publish release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Join the chunks and check the APK
+        run: |
+          cat parts/tamlik-care-phase1.apk.part-* > tamlik-care-phase1.apk
+          sha256sum -c tamlik-care-phase1.apk.sha256
+      - name: Publish as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build=$(cat BUILD)
+          tag="build-$build"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" tamlik-care-phase1.apk \
+            --target "$GITHUB_SHA" --latest \
+            --title "Tamlik Care test build $build" --notes-file NOTES.md
+          # Keep the last 3 builds; older tags would pin old chunks in git.
+          gh release list --limit 100 --json tagName --jq '.[3:][].tagName' |
+            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
+          echo "::notice::https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/tamlik-care-phase1.apk"
